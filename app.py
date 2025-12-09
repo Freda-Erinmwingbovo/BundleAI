@@ -1,4 +1,4 @@
-# app.py — FINAL WITH PDF DOWNLOAD (Professional, client-ready)
+# app.py — FINAL VERSION WITH BULLETPROOF PDF (No encoding errors)
 
 import streamlit as st
 import pandas as pd
@@ -6,11 +6,16 @@ import numpy as np
 from mlxtend.frequent_patterns import fpgrowth, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 import plotly.express as px
-import time
-from fpdf import FPDF   # ← NEW: for PDF generation
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+import io
 
-# === PAGE CONFIG & BRANDING ===
 st.set_page_config(page_title="BundleAI", layout="wide")
+
+# === BRANDING ===
 st.markdown("""
 <div style="text-align:center; padding:30px; background:#1e3d1e; color:white; border-radius:15px; margin-bottom:30px">
 <h1>BundleAI</h1>
@@ -24,9 +29,10 @@ uploaded_file = st.file_uploader("", type=['csv'])
 
 if uploaded_file is not None:
     with st.spinner("BundleAI is analysing your data..."):
-        # [Same data loading & cleaning code as before — unchanged]
+        # Load & clean
         df = pd.read_csv(uploaded_file, header=None, dtype=str)
         raw = df.fillna('').astype(str).apply(lambda row: [x.strip().title() for x in row if x.strip()], axis=1).tolist()
+        
         cleaned = []
         for basket in raw:
             seen = set()
@@ -43,7 +49,7 @@ if uploaded_file is not None:
         te_ary = te.fit(cleaned).transform(cleaned)
         df_onehot = pd.DataFrame(te_ary, columns=te.columns_)
         
-        min_support = max(0.01, 100/n_transactions)
+        min_support = max(0.01, 100 / n_transactions)
         freq = fpgrowth(df_onehot, min_support=min_support, use_colnames=True, max_len=6)
         rules = association_rules(freq, metric="lift", min_threshold=1.0)
         
@@ -52,59 +58,114 @@ if uploaded_file is not None:
         elite = elite.sort_values('impact', ascending=False).head(25).reset_index(drop=True)
         
         if elite.empty:
-            st.warning("No strong bundles found.")
+            st.warning("No strong bundles found. Try a larger dataset.")
             st.stop()
         
         top_items = df_onehot.sum().sort_values(ascending=False).head(20)
 
-    st.success(f"BundleAI discovered {len(elite)} elite bundles!")
+    st.success(f"BundleAI discovered {len(elite)} elite bundles across {n_transactions:,} transactions!")
 
-    # === DISPLAY RESULTS ===
-    col1, col2 = st.columns([1.2, 1])
-    with col1:
-        fig1 = px.bar(top_items, title="Top 20 Best-Selling Items", color=top_items.values, color_continuous_scale="emrld")
-        st.plotly_chart(fig1, use_container_width=True)
-    with col2:
-        elite['Bundle'] = elite.apply(lambda r: f"{', '.join(sorted(list(r.antecedents)))} → {', '.join(sorted(list(r.consequents)))}", axis=1)
-        show = elite[['Bundle', 'lift', 'confidence']].round(3)
-        show.columns = ['Bundle Insight', 'Lift', 'Confidence']
-        st.dataframe(show.head(10).style.background_gradient(cmap='Greens', subset=['Lift']), use_container_width=True)
+    # Top 20 chart
+    fig1 = px.bar(top_items, title="Top 20 Best-Selling Items", 
+                  color=top_items.values, color_continuous_scale="emrld",
+                  text=top_items.values, height=500)
+    fig1.update_traces(textposition='outside')
+    fig1.update_layout(xaxis_tickangle=45, showlegend=False)
+    st.plotly_chart(fig1, use_container_width=True)
 
-    # === GENERATE PDF REPORT ===
+    # Elite bundles table
+    elite['Bundle'] = elite.apply(lambda r: f"{', '.join(sorted(list(r.antecedents)))} → {', '.join(sorted(list(r.consequents)))}", axis=1)
+    show = elite[['Bundle', 'lift', 'confidence', 'support', 'impact']].round(3)
+    show.columns = ['Bundle Insight', 'Lift', 'Confidence', 'Support', 'Business Impact']
+    
+    st.subheader("Elite Bundles (ranked by business impact)")
+    st.dataframe(show.style.background_gradient(cmap='Greens', subset=['Lift', 'Business Impact']), 
+                 use_container_width=True, height=400)
+
+    # Hidden Gems
+    top20_set = set(top_items.head(20).index)
+    hidden_gems = {item for fs in elite['antecedents'].tolist() + elite['consequents'].tolist() 
+                   for item in fs if item not in top20_set}
+    hidden_gems_list = " • ".join(sorted(hidden_gems)[:8]) if hidden_gems else "None detected"
+    
+    st.subheader("Hidden Gem Products")
+    st.write(f"**{hidden_gems_list}** (low individual sales, high bundle power)")
+
+    # Customer segments
+    basket_sizes = [len(b) for b in cleaned]
+    large_baskets = sum(1 for s in basket_sizes if s >= 15)
+    b2b_percent = large_baskets / n_transactions * 100
+    
+    gaming_keywords = ['cyberpower', 'gamer desktop', 'gaming mouse', 'gaming keyboard', 'razer', 'corsair k70', 'logitech g']
+    gaming_baskets = sum(1 for b in cleaned 
+                        if any(k.lower() in ' '.join(b).lower() for k in gaming_keywords))
+    gaming_percent = gaming_baskets / n_transactions * 100
+    
+    st.subheader("Customer Behaviour Profile")
+    if b2b_percent >= 8:
+        st.write(f"• {b2b_percent:.1f}% of orders are large corporate/B2B purchases (15+ items)")
+    if gaming_percent >= 5:
+        st.write(f"• Strong gaming segment: {gaming_percent:.1f}% contain dedicated gaming gear")
+    if b2b_percent < 8 and gaming_percent < 5:
+        st.write("• Primarily individual retail shoppers")
+
+    # === BULLETPROOF PDF GENERATION ===
     def create_pdf():
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        pdf.set_fill_color(30, 61, 30)
-        pdf.set_text_color(255, 255, 255)
-        pdf.cell(0, 15, "BundleAI – Market Basket Intelligence Report", 1, 1, 'C', fill=True)
-        pdf.set_text_color(0, 0, 0)
-        pdf.ln(10)
-        pdf.set_font("Arial", size=11)
-        pdf.cell(0, 10, f"Transactions analyzed: {n_transactions:,}", 0, 1)
-        pdf.cell(0, 10, f"Top 5 best-sellers: {', '.join(top_items.head(5).index.tolist())}", 0, 1)
-        pdf.ln(5)
-        pdf.set_font("Arial", 'B', size=12)
-        pdf.cell(0, 10, "Top 5 Recommended Bundles", 0, 1)
-        pdf.set_font("Arial", size=11)
-        for i in range(5):
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle('CustomTitle', parent=styles['Heading1'], 
+                                 fontSize=18, spaceAfter=30, alignment=1, 
+                                 textColor=colors.darkgreen))
+        
+        story = []
+        story.append(Paragraph("BundleAI – Market Basket Intelligence Report", styles['CustomTitle']))
+        story.append(Spacer(1, 0.2*inch))
+        story.append(Paragraph(f"Generated for {n_transactions:,} transactions", styles['Normal']))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Top items table
+        top5_data = [['Rank', 'Product']] + [[i+1, p] for i, p in enumerate(top_items.head(5).index)]
+        top5_table = Table(top5_data)
+        top5_table.setStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkgreen),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ])
+        story.append(Paragraph("Top 5 Best-Selling Items", styles['Heading2']))
+        story.append(top5_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Top bundles
+        story.append(Paragraph("Top 5 Recommended Bundles", styles['Heading2']))
+        for i in range(min(5, len(elite))):
             row = elite.iloc[i]
             ants = ', '.join(sorted(list(row.antecedents)))
             cons = ', '.join(sorted(list(row.consequents)))
-            pdf.cell(0, 10, f"{i+1}. Customers who buy {ants} also buy {cons} (Lift: {row['lift']:.2f})", 0, 1)
-        pdf.ln(10)
-        pdf.set_font("Arial", size=10)
-        pdf.cell(0, 10, "Report generated by BundleAI • By Freda Erinmwingbovo", 0, 1, 'C')
-        return pdf.output(dest='S').encode('latin1')
+            bundle_text = f"{i+1}. Customers who buy {ants} also buy {cons} (Lift: {row['lift']:.2f})"
+            story.append(Paragraph(bundle_text, styles['Normal']))
+        story.append(Spacer(1, 0.3*inch))
+        
+        story.append(Paragraph("Generated by BundleAI • By Freda Erinmwingbovo", styles['Italic']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer.getvalue()
 
     pdf_data = create_pdf()
 
-    # === DOWNLOAD BUTTONS ===
+    # Download buttons
     col1, col2 = st.columns(2)
     with col1:
-        st.download_button("Download Full Report as PDF", pdf_data, "BundleAI_Report.pdf", "application/pdf")
+        st.download_button("📄 Download Professional PDF Report", pdf_data, 
+                          "BundleAI_Report.pdf", "application/pdf")
     with col2:
-        st.download_button("Download Raw Data as CSV", elite.to_csv(index=False), "bundleai_data.csv", "text/csv")
+        st.download_button("📊 Download Raw Data as CSV", elite.to_csv(index=False), 
+                          "bundleai_data.csv", "text/csv")
 
     st.markdown("---")
     st.markdown("<p style='text-align:center; color:#666'>Powered by FP-Growth • Built with ❤️ by Freda Erinmwingbovo</p>", unsafe_allow_html=True)
