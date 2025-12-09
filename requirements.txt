@@ -4,4 +4,3 @@ numpy
 mlxtend
 plotly
 reportlab
-kaleido
