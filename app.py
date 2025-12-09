@@ -1,4 +1,4 @@
-# app.py — FINAL & PERFECT: Beautiful PDF Report (No errors, Streamlit Cloud ready)
+# app.py — FINAL & PERFECT: Beautiful Presentation-Ready PDF (100% working)
 
 import streamlit as st
 import pandas as pd
@@ -7,8 +7,8 @@ from mlxtend.frequent_patterns import fpgrowth, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 import plotly.express as px
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 import io
@@ -66,12 +66,12 @@ if uploaded_file is not None:
 
     st.success(f"BundleAI discovered {len(elite)} elite bundles!")
 
-    # 1. Top 20 Chart
+    # Display results
     fig1 = px.bar(top_items, title="Top 20 Best-Selling Items", color=top_items.values, color_continuous_scale="emrld", height=700)
     fig1.update_layout(xaxis_tickangle=45, showlegend=False)
     st.plotly_chart(fig1, use_container_width=True)
 
-    # 2. Product Love Map
+    # Product Love Map
     bundle_items = pd.Series([item for sublist in elite['antecedents'].tolist() + elite['consequents'].tolist() 
                              for item in sublist]).value_counts().head(14)
     co_matrix = pd.DataFrame(0, index=bundle_items.index, columns=bundle_items.index)
@@ -84,7 +84,7 @@ if uploaded_file is not None:
     st.plotly_chart(fig2, use_container_width=True)
     st.markdown("**Interpretation**: Darker green = bought together very often → ideal for store layout or website recommendations")
 
-    # 3. Elite Bundle Table
+    # Elite Bundle Table
     def make_natural(row):
         ants = ', '.join(sorted(list(row.antecedents)))
         cons = ', '.join(sorted(list(row.consequents)))
@@ -95,38 +95,45 @@ if uploaded_file is not None:
     st.dataframe(show.style.background_gradient(cmap='Greens', subset=['Lift', 'Business Impact']), use_container_width=True)
     st.markdown("**Table explained**: Support = how common • Confidence = how reliable • Lift >2.0 = very strong • Business Impact = estimated revenue potential")
 
-    # 4. Hidden Gems
+    # Hidden Gems & Customer Profile
     top20_set = set(top_items.head(20).index)
     hidden_gems = {item for fs in elite['antecedents'].tolist() + elite['consequents'].tolist() 
                    for item in fs if item not in top20_set}
     hidden_gems_list = " • ".join(sorted(hidden_gems)[:10]) if hidden_gems else "None detected"
 
-    # 5. Customer Profile
     basket_sizes = [len(b) for b in cleaned]
     b2b_percent = sum(1 for s in basket_sizes if s >= 15) / n_transactions * 100
     gaming_percent = sum(1 for b in cleaned 
                          if any(k.lower() in ' '.join(b).lower() for k in ['cyberpower','gamer','razer','rgb','gaming'])) / n_transactions * 100
+
+    st.write("**Hidden Gem Products** (strong in bundles, low individual sales)")
+    st.write(hidden_gems_list)
+
     st.write("**Customer Behaviour Profile**")
     if b2b_percent >= 8: st.write(f"• {b2b_percent:.1f}% large corporate/B2B purchases")
     if gaming_percent >= 5: st.write(f"• {gaming_percent:.1f}% gaming customers")
     if b2b_percent < 8 and gaming_percent < 5: st.write("• Mostly individual shoppers")
 
-    # === GORGEOUS PRESENTATION-READY PDF ===
+    # === BEAUTIFUL PRESENTATION-READY PDF ===
     def create_pdf():
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.8*inch)
         styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle('Title', fontSize=24, alignment=1, spaceAfter=30, textColor=colors.darkgreen))
-        styles.add(ParagraphStyle('Subtitle', fontSize=14, alignment=1, spaceAfter=20))
         story = []
 
+        # Title
         story.append(Paragraph("BundleAI – Market Basket Intelligence Report", styles['Title']))
-        story.append(Paragraph("By Freda Erinmwingbovo", styles['Subtitle']))
+        story.append(Paragraph("By Freda Erinmwingbovo", styles['Normal']))
         story.append(Spacer(1, 0.3*inch))
 
-        story.append(Paragraph(f"<b>Data Overview</b><br/>Transactions: {n_transactions:,} • Average basket: {avg_basket:.2f} items • Products: {len(df_onehot.columns):,}", styles['Normal']))
+        # Data Overview
+        story.append(Paragraph(f"<b>Data Overview</b>", styles['Normal']))
+        story.append(Paragraph(f"• Transactions analyzed: {n_transactions:,}", styles['Normal']))
+        story.append(Paragraph(f"• Average basket size: {avg_basket:.2f} items", styles['Normal']))
+        story.append(Paragraph(f"• Total products: {len(df_onehot.columns):,}", styles['Normal']))
         story.append(Spacer(1, 0.3*inch))
 
+        # Top 5
         story.append(Paragraph("<b>Top 5 Best-Sellers</b>", styles['Heading2']))
         for i, item in enumerate(top_items.head(5).index, 1):
             story.append(Paragraph(f"{i}. {item} — sold {int(top_items.iloc[i-1])} times", styles['Normal']))
@@ -151,7 +158,7 @@ if uploaded_file is not None:
 
     pdf_data = create_pdf()
 
-    col1, col2 = st.columns(2)
+    col1, col2 =  st.columns(2)
     with col1:
         st.download_button("Download Presentation-Ready PDF Report", pdf_data, "BundleAI_Presentation.pdf", "application/pdf")
     with col2:
