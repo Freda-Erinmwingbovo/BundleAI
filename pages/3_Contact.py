@@ -11,5 +11,5 @@ Data Scientist | Retail Analytics | Python
 🔗 https://www.linkedin.com/in/freda-erinmwingbovo 
 🐙 https://github.com/Freda-Erinmwingbovo/BundleAI
 
-Have questions or want a custom version? Get in touch!
+Get in touch for custom versions or consulting.
 """)
