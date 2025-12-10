@@ -1,4 +1,4 @@
-# app.py — FINAL ERROR-FREE VERSION (Beautiful text PDF, no Kaleido)
+# app.py — FINAL ERROR-FREE VERSION (Beautiful text PDF with everything, no Kaleido)
 
 import streamlit as st
 import pandas as pd
@@ -76,13 +76,13 @@ if uploaded_file is not None:
     st.success(f"BundleAI discovered {len(elite)} elite bundles!")
 
     # 1. Top 20 Chart
-    fig1 = px.bar(top_items, title="Top 20 Best-Selling Items", color=top_items.values, color_continuous_scale="emrld", height=700)
+    fig1 = px.bar(top_items, title="Top 20 Best-Selling Items", color=top_items.values, color_continuous_scale="emrld", height=720)
     fig1.update_traces(textposition='outside')
     fig1.update_layout(xaxis_tickangle=45, showlegend=False, title_x=0.5)
     st.plotly_chart(fig1, use_container_width=True)
 
     # 2. Product Love Map
-    bundle_items = pd.Series([item for sublist in elite['antecedents'].tolist() + elite['consequents'].tolist() 
+    bundle_items = pd.Series([item for sublist in elite['antecedents'].tolist() + elite['consequents'].tolist()
                              for item in sublist]).value_counts().head(14)
     co_matrix = pd.DataFrame(0, index=bundle_items.index, columns=bundle_items.index)
     for _, r in elite.iterrows():
@@ -179,7 +179,7 @@ BundleAI automatically turns sales data into clarity.
 
         story.append(Paragraph("Top 20 Best-Selling Items", styles['Heading2']))
         top_table_data = [['Rank', 'Product', 'Times Sold']]
-        for i, (item, count) in enumerate(top_items.head(20).items(), 1):
+        for i, (item, count) in enumerate(top_items.items(), 1):
             top_table_data.append([i, item, int(count)])
         top_table = Table(top_table_data)
         top_table.setStyle([('BACKGROUND',(0,0),(-1,0),colors.darkgreen), ('TEXTCOLOR',(0,0),(-1,0),colors.white),
